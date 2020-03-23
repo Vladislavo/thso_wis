@@ -61,28 +61,28 @@ void setup() {
 }
 
 void loop() {
-    // read_sht85(&sensor_data);
-    // Serial.print("SHT85 : ");
-    // Serial.print(sensor_data.sht85_t); Serial.print(" C, ");
-    // Serial.print(sensor_data.sht85_h); Serial.println(" RH");
+    read_sht85(&sensor_data);
+    Serial.print("SHT85 : ");
+    Serial.print(sensor_data.sht85_t); Serial.print(" C, ");
+    Serial.print(sensor_data.sht85_h); Serial.println(" RH");
 
-    // read_hih8121(&sensor_data);
-    // Serial.print("HIH8121 : ");
-    // Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
-    // Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
+    read_hih8121(&sensor_data);
+    Serial.print("HIH8121 : ");
+    Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
+    Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
 
-    // read_hh10d(&sensor_data);
-    // Serial.print("HH10D : ");
-    // Serial.print(sensor_data.hh10d); Serial.println(" RH");
+    read_hh10d(&sensor_data);
+    Serial.print("HH10D : ");
+    Serial.print(sensor_data.hh10d); Serial.println(" RH");
 
     read_tmp102(&sensor_data);
     Serial.print("TMP102 : ");
     Serial.print(sensor_data.tmp102); Serial.println(" C");
 
-    // read_dht22(&sensor_data);
-    // Serial.print("DHT22 : ");
-    // Serial.print(sensor_data.dht22_t); Serial.print(" C, ");
-    // Serial.print(sensor_data.dht22_h); Serial.print(" RH");
+    read_dht22(&sensor_data);
+    Serial.print("DHT22 : ");
+    Serial.print(sensor_data.dht22_t); Serial.print(" C, ");
+    Serial.print(sensor_data.dht22_h); Serial.println(" RH\r\n");
 
     delay(1000);
 }
