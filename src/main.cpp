@@ -11,6 +11,11 @@
 #define DHT22_PIN                           A0
 #define DHT22_READ_RETRIES                  100
 
+
+DHT dht(DHT22_PIN, DHT22);
+SHTSensor sht85;
+HIHReader hih8121(0x27);
+
 typedef struct {
     float dht22_t   = .0;
     float dht22_h   = .0;
@@ -23,23 +28,31 @@ typedef struct {
 } wis_sensor_data_t;
 
 void read_dht22(wis_sensor_data_t *sensor_data);
-
-DHT dht(DHT22_PIN, DHT22);
-SHTSensor sht85;
-HIHReader hih8121(0x27);
+void read_sht85(wis_sensor_data_t *sensor_data);
+void read_hih8121(wis_sensor_data_t *sensor_data);
 
 wis_sensor_data_t sensor_data;
 
-
 void setup() {
     Serial.begin(BAUDRATE);
+    Wire.begin();
 
     dht.begin();
+    sht85.init();
+    sht85.setAccuracy(SHTSensor::SHT_ACCURACY_HIGH);
 }
 
 void loop() {
-    
-    
+    read_sht85(&sensor_data);
+    Serial.print("SHT85 : ");
+    Serial.print(sensor_data.sht85_t); Serial.print(" C, ");
+    Serial.print(sensor_data.sht85_h); Serial.println(" RH");
+
+    read_hih8121(&sensor_data);
+    Serial.print("HIH8121 : ");
+    Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
+    Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
+
     // read_dht22(&sensor_data);
     // Serial.print("DHT22 : ");
     // Serial.print(sensor_data.dht22_t); Serial.print(" C, ");
@@ -61,4 +74,14 @@ void read_dht22(wis_sensor_data_t *sensor_data) {
         }
         retries--;
     } while ((isnan(isnan(sensor_data->dht22_t)) || isnan(sensor_data->dht22_h)) && retries);
+}
+
+void read_sht85(wis_sensor_data_t *sensor_data) {
+    sht85.readSample();
+    sensor_data->sht85_t = sht85.getTemperature();
+    sensor_data->sht85_h = sht85.getHumidity();
+}
+
+void read_hih8121(wis_sensor_data_t *sensor_data) {
+    hih8121.read(&sensor_data->hih8121_t, &sensor_data->hih8121_h);
 }
