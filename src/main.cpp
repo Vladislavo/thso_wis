@@ -6,6 +6,8 @@
 #include <SHTSensor.h>
 #include <HIHReader.h>
 
+#include <SparkFunTMP102.h>
+
 #define BAUDRATE                            115200
 
 #define DHT22_PIN                           A0
@@ -17,6 +19,7 @@
 DHT dht(DHT22_PIN, DHT22);
 SHTSensor sht85;
 HIHReader hih8121(0x27);
+TMP102 tmp102;
 
 typedef struct {
     float dht22_t   = .0;
@@ -35,6 +38,7 @@ void read_dht22(wis_sensor_data_t *sensor_data);
 void read_sht85(wis_sensor_data_t *sensor_data);
 void read_hih8121(wis_sensor_data_t *sensor_data);
 void read_hh10d(wis_sensor_data_t *sensor_data);
+void read_tmp102(wis_sensor_data_t *sensor_data);
 
 wis_sensor_data_t sensor_data;
 
@@ -50,6 +54,10 @@ void setup() {
     sht85.setAccuracy(SHTSensor::SHT_ACCURACY_HIGH);
 
     setup_hh10d();
+
+    tmp102.begin(0x49);
+    tmp102.setConversionRate(2); // 4Hz
+    tmp102.setExtendedMode(0);  // 12 bits
 }
 
 void loop() {
@@ -63,9 +71,13 @@ void loop() {
     // Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
     // Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
 
-    read_hh10d(&sensor_data);
-    Serial.print("HH10D : ");
-    Serial.print(sensor_data.hh10d); Serial.println(" RH");
+    // read_hh10d(&sensor_data);
+    // Serial.print("HH10D : ");
+    // Serial.print(sensor_data.hh10d); Serial.println(" RH");
+
+    read_tmp102(&sensor_data);
+    Serial.print("TMP102 : ");
+    Serial.print(sensor_data.tmp102); Serial.println(" C");
 
     // read_dht22(&sensor_data);
     // Serial.print("DHT22 : ");
@@ -134,4 +146,9 @@ void read_hh10d(wis_sensor_data_t *sensor_data) {
     freq /= 256;
 
     sensor_data->hh10d = float((ofs - freq)* sens)/float(4096);
+}
+
+void read_tmp102(wis_sensor_data_t *sensor_data) {
+    tmp102.wakeup();
+    sensor_data->tmp102 = tmp102.readTempC();
 }
