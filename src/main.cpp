@@ -11,6 +11,8 @@
 #define DHT22_PIN                           A0
 #define DHT22_READ_RETRIES                  100
 
+#define HH10D_PIN                           8
+
 
 DHT dht(DHT22_PIN, DHT22);
 SHTSensor sht85;
@@ -27,11 +29,17 @@ typedef struct {
     float tmp102    = .0;
 } wis_sensor_data_t;
 
+void setup_hh10d();
+
 void read_dht22(wis_sensor_data_t *sensor_data);
 void read_sht85(wis_sensor_data_t *sensor_data);
 void read_hih8121(wis_sensor_data_t *sensor_data);
+void read_hh10d(wis_sensor_data_t *sensor_data);
 
 wis_sensor_data_t sensor_data;
+
+int sens;
+int ofs;
 
 void setup() {
     Serial.begin(BAUDRATE);
@@ -40,18 +48,24 @@ void setup() {
     dht.begin();
     sht85.init();
     sht85.setAccuracy(SHTSensor::SHT_ACCURACY_HIGH);
+
+    setup_hh10d();
 }
 
 void loop() {
-    read_sht85(&sensor_data);
-    Serial.print("SHT85 : ");
-    Serial.print(sensor_data.sht85_t); Serial.print(" C, ");
-    Serial.print(sensor_data.sht85_h); Serial.println(" RH");
+    // read_sht85(&sensor_data);
+    // Serial.print("SHT85 : ");
+    // Serial.print(sensor_data.sht85_t); Serial.print(" C, ");
+    // Serial.print(sensor_data.sht85_h); Serial.println(" RH");
 
-    read_hih8121(&sensor_data);
-    Serial.print("HIH8121 : ");
-    Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
-    Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
+    // read_hih8121(&sensor_data);
+    // Serial.print("HIH8121 : ");
+    // Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
+    // Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
+
+    read_hh10d(&sensor_data);
+    Serial.print("HH10D : ");
+    Serial.print(sensor_data.hh10d); Serial.println(" RH");
 
     // read_dht22(&sensor_data);
     // Serial.print("DHT22 : ");
@@ -84,4 +98,40 @@ void read_sht85(wis_sensor_data_t *sensor_data) {
 
 void read_hih8121(wis_sensor_data_t *sensor_data) {
     hih8121.read(&sensor_data->hih8121_t, &sensor_data->hih8121_h);
+}
+
+// function to intitialize HH10D
+int i2cRead2bytes(int deviceaddress, byte address) {
+    // SET ADDRESS
+    Wire.beginTransmission(deviceaddress);
+    Wire.write(address); // address for sensitivity
+    Wire.endTransmission();
+
+    Wire.requestFrom(deviceaddress, 2);
+
+    int rv = 0;
+    for (int c = 0; c < 2; c++ ) {
+        if (Wire.available()) {
+            rv = rv * 256 + Wire.read();
+        }
+    }
+
+    return rv;
+}
+
+void setup_hh10d() {
+    const int HH10D_I2C_ADDRESS = 81;
+    sens = i2cRead2bytes(HH10D_I2C_ADDRESS, 10); 
+	  ofs  = i2cRead2bytes(HH10D_I2C_ADDRESS, 12);
+}
+
+void read_hh10d(wis_sensor_data_t *sensor_data) {
+    const int HH10D_FOUT_PIN    = HH10D_PIN;
+    float freq = .0;
+      for (int j=0; j < 256; j++) {
+          freq += 500000/pulseIn(HH10D_FOUT_PIN, HIGH, 250000);
+      }
+    freq /= 256;
+
+    sensor_data->hh10d = float((ofs - freq)* sens)/float(4096);
 }
