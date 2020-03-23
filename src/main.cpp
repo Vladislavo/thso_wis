@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <avr/interrupt.h>
+
 #include <Wire.h>
 
 #include <DHT.h>
@@ -8,12 +10,20 @@
 
 #include <SparkFunTMP102.h>
 
+#include <bus_protocol/bus_protocol.h>
+
 #define BAUDRATE                            115200
 
 #define DHT22_PIN                           A0
 #define DHT22_READ_RETRIES                  100
 
 #define HH10D_PIN                           8
+#define ESP32_SYN_PIN                       A3
+
+#define LED_SERIAL                          DD6
+
+#define BUS_PROTOCOL_MAX_PACKET_SIZE        128
+#define BUS_PROTOCOL_MAX_WAITING_TIME       500
 
 
 DHT dht(DHT22_PIN, DHT22);
@@ -40,10 +50,21 @@ void read_hih8121(wis_sensor_data_t *sensor_data);
 void read_hh10d(wis_sensor_data_t *sensor_data);
 void read_tmp102(wis_sensor_data_t *sensor_data);
 
+void read_sensors(wis_sensor_data_t sensor_data);
+
+uint8_t bus_protocol_serial_receive(Stream *serial, uint8_t *data, uint8_t *data_length, const uint32_t timeout);
+void bus_protocol_sensor_data_payload_encode (
+    const wis_sensor_data_t *sensors_data,
+    uint8_t *packet,
+    uint8_t *packet_length);
+
 wis_sensor_data_t sensor_data;
 
 int sens;
 int ofs;
+
+uint8_t buffer[BUS_PROTOCOL_MAX_PACKET_SIZE];
+uint8_t buffer_length = 0;
 
 void setup() {
     Serial.begin(BAUDRATE);
@@ -58,33 +79,38 @@ void setup() {
     tmp102.begin(0x49);
     tmp102.setConversionRate(2); // 4Hz
     tmp102.setExtendedMode(0);  // 12 bits
+
+    /* setup bit A3 as input */
+    DDRC = 0 << DDC3;
 }
 
 void loop() {
-    read_sht85(&sensor_data);
-    Serial.print("SHT85 : ");
-    Serial.print(sensor_data.sht85_t); Serial.print(" C, ");
-    Serial.print(sensor_data.sht85_h); Serial.println(" RH");
+    if (PINC & bit(DDC3)) {
+        read_sensors(&sensor_data);
 
-    read_hih8121(&sensor_data);
-    Serial.print("HIH8121 : ");
-    Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
-    Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
+        /* prepare data for sending */
+        bus_protocol_sensor_data_payload_encode(&sensor_data, buffer, &buffer_length);
+        bus_protocol_data_send_encode(buffer, buffer_length, buffer, &buffer_length);
 
-    read_hh10d(&sensor_data);
-    Serial.print("HH10D : ");
-    Serial.print(sensor_data.hh10d); Serial.println(" RH");
+        /* set the flag for esp */
+        PORTC = bit(DDC3);
+        
+        if (bus_protocol_serial_receive(&Serial, buffer, &buffer_length, 60000)) {
+            switch (bus_protocol_packet_decode(buffer, buffer_length, buffer, &buffer_length)) {
+                case BUS_PROTOCOL_PACKET_TYPE_DATA_REQUEST :
+                    digitalWrite(LED_SERIAL, HIGH);
+                    Serial.println("DATA REQUEST");
+                  
+                    Serial.write(buffer, buffer_length);
 
-    read_tmp102(&sensor_data);
-    Serial.print("TMP102 : ");
-    Serial.print(sensor_data.tmp102); Serial.println(" C");
+                    digitalWrite(LED_SERIAL, LOW);
+                    break;
+                default:
+                    break;
+            }
+        }
 
-    read_dht22(&sensor_data);
-    Serial.print("DHT22 : ");
-    Serial.print(sensor_data.dht22_t); Serial.print(" C, ");
-    Serial.print(sensor_data.dht22_h); Serial.println(" RH\r\n");
-
-    delay(1000);
+    }
 }
 
 void read_dht22(wis_sensor_data_t *sensor_data) {
@@ -152,3 +178,104 @@ void read_tmp102(wis_sensor_data_t *sensor_data) {
     tmp102.wakeup();
     sensor_data->tmp102 = tmp102.readTempC();
 }
+
+void read_sensors(wis_sensor_data_t *sensor_data) {
+    read_sht85(sensor_data);
+    read_hih8121(sensor_data);
+    read_hh10d(sensor_data);
+    read_dht22(sensor_data);
+    read_tmp102(sensor_data);
+
+    // Serial.print("SHT85 : ");
+    // Serial.print(sensor_data.sht85_t); Serial.print(" C, ");
+    // Serial.print(sensor_data.sht85_h); Serial.println(" RH");
+
+    // Serial.print("HIH8121 : ");
+    // Serial.print(sensor_data.hih8121_t); Serial.print(" C, ");
+    // Serial.print(sensor_data.hih8121_h); Serial.println(" RH");
+
+    // Serial.print("HH10D : ");
+    // Serial.print(sensor_data.hh10d); Serial.println(" RH");
+
+    // Serial.print("TMP102 : ");
+    // Serial.print(sensor_data.tmp102); Serial.println(" C");
+    
+    // Serial.print("DHT22 : ");
+    // Serial.print(sensor_data.dht22_t); Serial.print(" C, ");
+    // Serial.print(sensor_data.dht22_h); Serial.println(" RH\r\n");
+
+    // delay(1000);
+}
+
+uint8_t bus_protocol_serial_receive(Stream *serial, uint8_t *data, uint8_t *data_length, const uint32_t timeout) {
+    *data_length = 0;
+    uint32_t start_millis = millis();
+    while(start_millis + timeout > millis() && *data_length < BUS_PROTOCOL_MAX_PACKET_SIZE) {
+        if (serial->available()) {
+            data[(*data_length)++] = serial->read();
+            // update wating time
+            start_millis = millis();
+        }
+    }
+
+    return *data_length;
+}
+
+void bus_protocol_sensor_data_payload_encode (
+    const wis_sensor_data_t *sensors_data,
+    uint8_t *packet,
+    uint8_t *packet_length) 
+{
+    *packet_length = 0;
+
+    packet[*packet_length] = BUS_PROTOCOL_BOARD_ID_WIS;
+    (*packet_length)++;
+
+    memcpy(&packet[*packet_length], &sensors_data->dht22_t, sizeof(sensors_data->dht22_t));
+    (*packet_length) += sizeof(sensors_data->dht22_t);
+
+    memcpy(&packet[*packet_length], &sensors_data->dht22_h, sizeof(sensors_data->dht22_h));
+    (*packet_length) += sizeof(sensors_data->dht22_h);
+
+    memcpy(&packet[*packet_length], &sensors_data->sht85_t, sizeof(sensors_data->sht85_t));
+    (*packet_length) += sizeof(sensors_data->sht85_t);
+
+    memcpy(&packet[*packet_length], &sensors_data->sht85_h, sizeof(sensors_data->sht85_h));
+    (*packet_length) += sizeof(sensors_data->sht85_h);
+
+    memcpy(&packet[*packet_length], &sensors_data->hih8121_t, sizeof(sensors_data->hih8121_t));
+    (*packet_length) += sizeof(sensors_data->hih8121_t);
+
+    memcpy(&packet[*packet_length], &sensors_data->hih8121_h, sizeof(sensors_data->hih8121_h));
+    (*packet_length) += sizeof(sensors_data->hih8121_h);
+
+    memcpy(&packet[*packet_length], &sensors_data->hh10d, sizeof(sensors_data->hh10d));
+    (*packet_length) += sizeof(sensors_data->hh10d);
+
+    memcpy(&packet[*packet_length], &sensors_data->tmp102, sizeof(sensors_data->tmp102));
+    (*packet_length) += sizeof(sensors_data->tmp102);
+}
+
+
+
+
+
+
+#ifdef AVR_INT
+volatile uint8_t esp_sync = 0;
+
+setup() {
+    /* disable interrupts before handling */
+    cli();
+    /* enable port c interrupts */
+    PCICR = 1 << PCIE1;
+    /* enable inerrupt on PCINT11 */
+    PCMSK1 = 1 << PCINT11;
+    /* enable interrupts after handling */
+    sei();
+}
+
+ISR(PCINT1_vect) {
+    esp_sync = 1;
+}
+#endif
